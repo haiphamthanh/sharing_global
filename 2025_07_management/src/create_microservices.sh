@@ -1,4 +1,5 @@
 #!/bin/bash
+# chmod +x create_microservices.sh
 
 # Danh sách các service bạn muốn tạo
 services=("finance_jira_service" "ecommerce_ticket_service")

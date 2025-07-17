@@ -1,0 +1,91 @@
+<mxfile host="Electron" agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/26.2.2 Chrome/134.0.6998.178 Electron/35.1.2 Safari/537.36" version="26.2.2">
+  <diagram name="Page-1" id="RwwOQQCPlEI9IhupRRyv">
+    <mxGraphModel dx="2307" dy="1272" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="QMhxLdxhkdNpCxkata71-1" value="Basic test case&lt;div&gt;(part_0003)&lt;/div&gt;" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="220" y="217.9" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="QMhxLdxhkdNpCxkata71-2" value="Pull request" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="340" y="580" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="QMhxLdxhkdNpCxkata71-5" value="" style="dashed=0;outlineConnect=0;html=1;align=center;labelPosition=center;verticalLabelPosition=bottom;verticalAlign=top;shape=mxgraph.weblogos.json" vertex="1" parent="1">
+          <mxGeometry x="470" y="210" width="70" height="75.8" as="geometry" />
+        </mxCell>
+        <mxCell id="QMhxLdxhkdNpCxkata71-6" value="" style="endArrow=classic;html=1;rounded=0;" edge="1" parent="1" source="QMhxLdxhkdNpCxkata71-1" target="QMhxLdxhkdNpCxkata71-5">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="260" y="337.9" as="sourcePoint" />
+            <mxPoint x="310" y="287.9" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="QMhxLdxhkdNpCxkata71-7" value="" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/azure2/ai_machine_learning/Azure_OpenAI.svg;" vertex="1" parent="1">
+          <mxGeometry x="597" y="340" width="68" height="68" as="geometry" />
+        </mxCell>
+        <mxCell id="QMhxLdxhkdNpCxkata71-12" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="QMhxLdxhkdNpCxkata71-8" target="QMhxLdxhkdNpCxkata71-10">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="QMhxLdxhkdNpCxkata71-8" value="Github API" style="verticalLabelPosition=bottom;html=1;verticalAlign=top;align=center;strokeColor=none;fillColor=#00BEF2;shape=mxgraph.azure.github_code;pointerEvents=1;" vertex="1" parent="1">
+          <mxGeometry x="615" y="585" width="50" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="QMhxLdxhkdNpCxkata71-9" value="" style="dashed=0;outlineConnect=0;html=1;align=center;labelPosition=center;verticalLabelPosition=bottom;verticalAlign=top;shape=mxgraph.weblogos.json" vertex="1" parent="1">
+          <mxGeometry x="365" y="762.1" width="70" height="75.8" as="geometry" />
+        </mxCell>
+        <mxCell id="QMhxLdxhkdNpCxkata71-13" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="QMhxLdxhkdNpCxkata71-10" target="QMhxLdxhkdNpCxkata71-9">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="QMhxLdxhkdNpCxkata71-10" value="Response data" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="580" y="770" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="QMhxLdxhkdNpCxkata71-11" value="" style="endArrow=classic;html=1;rounded=0;" edge="1" parent="1" source="QMhxLdxhkdNpCxkata71-2" target="QMhxLdxhkdNpCxkata71-8">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="540" y="520" as="sourcePoint" />
+            <mxPoint x="590" y="470" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="QMhxLdxhkdNpCxkata71-15" value="Basic test case" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="30" y="117.9" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="QMhxLdxhkdNpCxkata71-24" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="QMhxLdxhkdNpCxkata71-16" target="QMhxLdxhkdNpCxkata71-23">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="QMhxLdxhkdNpCxkata71-16" value="Basic test case&lt;div&gt;(part_0001)&lt;/div&gt;" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="220" y="17.9" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="QMhxLdxhkdNpCxkata71-22" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="QMhxLdxhkdNpCxkata71-17" target="QMhxLdxhkdNpCxkata71-21">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="QMhxLdxhkdNpCxkata71-17" value="Basic test case&lt;div&gt;(part_0002)&lt;/div&gt;" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="220" y="117.9" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="QMhxLdxhkdNpCxkata71-18" value="" style="endArrow=classic;html=1;rounded=0;" edge="1" parent="1" source="QMhxLdxhkdNpCxkata71-15" target="QMhxLdxhkdNpCxkata71-16">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="100" y="227.9" as="sourcePoint" />
+            <mxPoint x="150" y="177.9" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="QMhxLdxhkdNpCxkata71-19" value="" style="endArrow=classic;html=1;rounded=0;" edge="1" parent="1" source="QMhxLdxhkdNpCxkata71-15" target="QMhxLdxhkdNpCxkata71-17">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="80" y="127.9" as="sourcePoint" />
+            <mxPoint x="230" y="77.9" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="QMhxLdxhkdNpCxkata71-20" value="" style="endArrow=classic;html=1;rounded=0;" edge="1" parent="1" source="QMhxLdxhkdNpCxkata71-15" target="QMhxLdxhkdNpCxkata71-1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="80" y="149.9" as="sourcePoint" />
+            <mxPoint x="230" y="155.9" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="QMhxLdxhkdNpCxkata71-21" value="" style="dashed=0;outlineConnect=0;html=1;align=center;labelPosition=center;verticalLabelPosition=bottom;verticalAlign=top;shape=mxgraph.weblogos.json" vertex="1" parent="1">
+          <mxGeometry x="470" y="110.00000000000003" width="70" height="75.8" as="geometry" />
+        </mxCell>
+        <mxCell id="QMhxLdxhkdNpCxkata71-23" value="" style="dashed=0;outlineConnect=0;html=1;align=center;labelPosition=center;verticalLabelPosition=bottom;verticalAlign=top;shape=mxgraph.weblogos.json" vertex="1" parent="1">
+          <mxGeometry x="470" y="10.000000000000014" width="70" height="75.8" as="geometry" />
+        </mxCell>
+        <mxCell id="QMhxLdxhkdNpCxkata71-25" value="" style="dashed=0;outlineConnect=0;html=1;align=center;labelPosition=center;verticalLabelPosition=bottom;verticalAlign=top;shape=mxgraph.weblogos.json" vertex="1" parent="1">
+          <mxGeometry x="70" y="530" width="70" height="75.8" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

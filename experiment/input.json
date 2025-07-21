@@ -1,0 +1,18 @@
+[
+  [
+    {
+      "text": "Click here\\nMore text",
+      "link": "http://example.com",
+      "raw": "Click here\\nMore text"
+    },
+    { "text": "No link", "link": null, "raw": "No link" }
+  ],
+  [
+    { "text": "Another row", "link": null, "raw": "Another row" },
+    { "text": "Google", "link": "http://google.com", "raw": "Google" }
+  ],
+  [
+    { "text": "Another row", "link": null, "raw": "Another row" },
+    { "text": "Google", "link": "http://google.com", "raw": "Google" }
+  ]
+]

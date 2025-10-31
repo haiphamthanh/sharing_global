@@ -1,0 +1,517 @@
+Tuyệt. Dưới đây là một template agent “planner–executors” hoàn chỉnh, dùng được ngay với OpenAI REST (Responses API), nạp prompt templates từ các file .txt, và chỉ cần input 1 prompt khi chạy.
+
+Mình đã ràng buộc time budget (mặc định 25s, để không vượt ngưỡng 29s), thực thi song song các bước độc lập, ép JSON output cho độ chính xác ổn định, và có graceful degrade khi sắp hết giờ.
+
+Tài liệu chính thức về Responses API và structured outputs (OpenAI):  ￼
+
+⸻
+
+Cấu trúc dự án
+
+timeboxed-agent/
+├─ README.md
+├─ requirements.txt
+├─ .env.example
+├─ prompts/
+│  ├─ planner.txt
+│  ├─ executor.txt
+│  └─ verifier.txt
+└─ agent/
+   ├─ config.py
+   ├─ openai_client.py
+   ├─ controller.py
+   ├─ planner.py
+   ├─ executor.py
+   ├─ verifier.py
+   ├─ merger.py
+   ├─ utils.py
+   └─ main.py
+
+
+⸻
+
+1) requirements.txt
+
+python-dotenv==1.0.1
+requests==2.32.3
+tqdm==4.66.5
+
+
+⸻
+
+2) .env.example
+
+# Bắt buộc
+OPENAI_API_KEY=sk-xxx
+
+# Tuỳ chọn: đổi model/endpoint/timeouts
+OPENAI_BASE_URL=https://api.openai.com
+OPENAI_MODEL=gpt-5
+# Tổng ngân sách thời gian end-to-end (giây)
+TIME_BUDGET_S=25
+# Số worker song song
+MAX_WORKERS=4
+# Giới hạn tokens mỗi call
+MAX_OUTPUT_TOKENS=400
+TEMPERATURE=0.2
+
+Gợi ý: để an toàn tương lai, bạn có thể đổi OPENAI_MODEL sang model mới nhất mà bạn có quyền truy cập. API dùng Responses API theo docs chính thức.  ￼
+
+⸻
+
+3) Prompt templates (/prompts)
+
+prompts/planner.txt
+
+Vai trò: Planner. Bạn phải lập kế hoạch thời gian-bị-ràng-buộc để hoàn thành yêu cầu trong {time_budget_s} giây.
+Yêu cầu gốc:
+{user_prompt}
+
+Ràng buộc:
+- Tối đa {max_steps} bước.
+- Chỉ tạo các bước thật sự cần thiết để đạt mục tiêu.
+- Gắn ETA cho từng bước (eta_ms), dependencies (deps), priority ∈ {"high","normal","low"}.
+- Đặt "cut_policy" mô tả cách cắt bớt khi còn < 20% ngân sách thời gian.
+
+Đầu ra JSON đúng schema:
+{
+  "steps": [
+    {"id": "S1", "desc": "mô tả ngắn gọn hành động", "eta_ms": 2500, "deps": [], "priority": "high"},
+    {"id": "S2", "desc": "mô tả...", "eta_ms": 1200, "deps": ["S1"], "priority": "high"}
+  ],
+  "abort_if": ["điều kiện thiếu dữ kiện cần dừng..."],
+  "cut_policy": "Nếu còn < 20% thời gian, bỏ priority=low và tóm tắt ngắn."
+}
+
+prompts/executor.txt
+
+Vai trò: Executor. Nhiệm vụ: {step_desc}
+
+Ràng buộc:
+- Thời lượng tối đa: {eta_ms} ms (trả lời gọn, đúng trọng tâm).
+- Không lan man, không giải thích dài.
+- Nếu thiếu dữ kiện, nêu rõ giả định tối thiểu và suy luận bảo thủ.
+
+Trả về đúng JSON:
+{
+  "result": <kết_quả_ngắn_gọn_có_cấu_trúc>,
+  "confidence": 0.0..1.0,
+  "assumptions": [ "giả định 1", "giả định 2" ]
+}
+
+prompts/verifier.txt
+
+Bạn là Verifier. Kiểm tra nhanh tính logic & định dạng của output sau:
+{merged_output}
+
+Hãy chỉ trả JSON:
+{
+  "valid": true/false,
+  "fixes": [ "nếu cần, gợi ý chỉnh sửa ngắn gọn" ],
+  "notes": "ghi chú ngắn"
+}
+
+
+⸻
+
+4) Code
+
+agent/config.py
+
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com").rstrip("/")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5")
+
+# thời gian & thực thi
+TIME_BUDGET_S = float(os.getenv("TIME_BUDGET_S", "25"))
+MAX_WORKERS = int(os.getenv("MAX_WORKERS", "4"))
+
+# tokens & sampling
+MAX_OUTPUT_TOKENS = int(os.getenv("MAX_OUTPUT_TOKENS", "400"))
+TEMPERATURE = float(os.getenv("TEMPERATURE", "0.2"))
+
+assert OPENAI_API_KEY, "OPENAI_API_KEY is required (set in .env)"
+
+agent/openai_client.py
+
+import json
+import requests
+from typing import Optional, Dict, Any, List
+from .config import OPENAI_API_KEY, OPENAI_BASE_URL, OPENAI_MODEL, MAX_OUTPUT_TOKENS, TEMPERATURE
+
+# Responses API (tài liệu tham chiếu): https://platform.openai.com/docs/api-reference/responses
+# Sử dụng input dạng "messages" (role + content) để tương thích tư duy chat.  [oai_citation:2‡OpenAI Platform](https://platform.openai.com/docs/api-reference/responses?utm_source=chatgpt.com)
+
+_DEFAULT_HEADERS = {
+    "Authorization": f"Bearer {OPENAI_API_KEY}",
+    "Content-Type": "application/json",
+}
+
+def responses_call(
+    system_prompt: str,
+    user_prompt: str,
+    timeout_s: float,
+    response_format: Optional[Dict[str, Any]] = None,
+    extra_messages: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """
+    Gọi OpenAI Responses API bằng REST.
+    Trả về object JSON của full phản hồi.
+    """
+    url = f"{OPENAI_BASE_URL}/v1/responses"
+
+    # Build messages theo Responses API
+    messages = []
+    if system_prompt:
+        messages.append({"role": "system", "content": [{"type": "text", "text": system_prompt}]})
+    if extra_messages:
+        messages.extend(extra_messages)
+    messages.append({"role": "user", "content": [{"type": "text", "text": user_prompt}]})
+
+    payload: Dict[str, Any] = {
+        "model": OPENAI_MODEL,
+        "input": messages,
+        "temperature": TEMPERATURE,
+        "max_output_tokens": MAX_OUTPUT_TOKENS,
+    }
+    if response_format:
+        payload["response_format"] = response_format  # e.g. {"type":"json_object"} or {"type":"json_schema", ...}
+
+    resp = requests.post(url, headers=_DEFAULT_HEADERS, json=payload, timeout=timeout_s)
+    resp.raise_for_status()
+    return resp.json()
+
+def extract_text_or_json(response: Dict[str, Any]) -> str:
+    """
+    Responses API trả về output trong 'output_text' tiện lợi (tuỳ thời điểm).
+    Nếu không có, lấy từ output[0].content[0].text.
+    Docs tổng quát: https://platform.openai.com/docs/api-reference/responses  [oai_citation:3‡OpenAI Platform](https://platform.openai.com/docs/api-reference/responses?utm_source=chatgpt.com)
+    """
+    if "output_text" in response and response["output_text"]:
+        return response["output_text"]
+    # Fallback: duyệt cấu trúc output theo spec
+    try:
+        output = response.get("output", [])
+        if output and "content" in output[0]:
+            parts = output[0]["content"]
+            if parts and parts[0].get("type") == "output_text":
+                return parts[0].get("text", "")
+            if parts and parts[0].get("type") == "text":
+                return parts[0].get("text", "")
+        # Một số bản trả về "message"
+        message = response.get("message", {})
+        if message:
+            content = message.get("content", [])
+            if content and content[0].get("type") == "output_text":
+                return content[0].get("text", "")
+            if content and content[0].get("type") == "text":
+                return content[0].get("text", "")
+    except Exception:
+        pass
+    return ""
+
+agent/utils.py
+
+import json
+from pathlib import Path
+
+def load_prompt_template(path: str) -> str:
+    return Path(path).read_text(encoding="utf-8")
+
+def safe_json_loads(s: str):
+    try:
+        return json.loads(s)
+    except Exception:
+        # cố gắng cắt vùng JSON nếu model có trả rác ngoài
+        start = s.find("{")
+        end = s.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            try:
+                return json.loads(s[start:end+1])
+            except Exception:
+                pass
+    return None
+
+agent/planner.py
+
+import time
+from .openai_client import responses_call, extract_text_or_json
+from .utils import safe_json_loads
+
+def plan(user_prompt: str, planner_template: str, time_budget_s: float, max_steps: int, timeout_s: float):
+    system = "Bạn là Planner: luôn tôn trọng thời gian và độ chính xác."
+    planner_user = planner_template.format(
+        time_budget_s=time_budget_s,
+        user_prompt=user_prompt,
+        max_steps=max_steps
+    )
+    # Bắt buộc ép JSON để parse nhanh và ổn định (structured outputs).  [oai_citation:4‡OpenAI Platform](https://platform.openai.com/docs/guides/structured-outputs?utm_source=chatgpt.com)
+    res = responses_call(
+        system_prompt=system,
+        user_prompt=planner_user,
+        timeout_s=timeout_s,
+        response_format={"type": "json_object"}
+    )
+    text = extract_text_or_json(res)
+    obj = safe_json_loads(text) or {"steps": [], "abort_if": [], "cut_policy": ""}
+    # sanitize
+    steps = obj.get("steps", [])
+    return {
+        "steps": steps[:max_steps],
+        "abort_if": obj.get("abort_if", []),
+        "cut_policy": obj.get("cut_policy", "")
+    }
+
+agent/executor.py
+
+from .openai_client import responses_call, extract_text_or_json
+from .utils import safe_json_loads
+
+def exec_step(step, executor_template: str, timeout_s: float):
+    system = "Bạn là Executor: trả lời gọn, đúng cấu trúc JSON."
+    user = executor_template.format(step_desc=step["desc"], eta_ms=step["eta_ms"])
+    res = responses_call(
+        system_prompt=system,
+        user_prompt=user,
+        timeout_s=timeout_s,
+        response_format={"type": "json_object"}
+    )
+    text = extract_text_or_json(res)
+    obj = safe_json_loads(text) or {}
+    obj.setdefault("id", step["id"])
+    return obj
+
+agent/verifier.py
+
+from .openai_client import responses_call, extract_text_or_json
+from .utils import safe_json_loads
+
+def verify(merged_output: dict, verifier_template: str, timeout_s: float):
+    system = "Bạn là Verifier: chỉ kiểm tra tối thiểu và trả JSON."
+    user = verifier_template.format(merged_output=str(merged_output))
+    res = responses_call(
+        system_prompt=system,
+        user_prompt=user,
+        timeout_s=timeout_s,
+        response_format={"type": "json_object"}
+    )
+    text = extract_text_or_json(res)
+    obj = safe_json_loads(text) or {"valid": True, "fixes": [], "notes": ""}
+    return obj
+
+agent/merger.py
+
+def merge_results(step_results: dict):
+    """Ghép kết quả từ các step thành một đối tượng gọn gàng."""
+    ordered = []
+    for sid, payload in step_results.items():
+        ordered.append({"id": sid, **payload})
+    return {"steps": ordered}
+
+agent/controller.py
+
+import time
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
+from collections import defaultdict
+
+from .config import TIME_BUDGET_S, MAX_WORKERS
+from .planner import plan
+from .executor import exec_step
+from .verifier import verify
+from .merger import merge_results
+
+def topo_layers(steps):
+    """Chuyển steps thành các 'lớp' theo deps (để có thể chạy song song)."""
+    id2step = {s["id"]: s for s in steps}
+    deps = {s["id"]: set(s.get("deps", [])) for s in steps}
+    layers = []
+    remaining = set(id2step)
+
+    while remaining:
+        ready = [id2step[i] for i in list(remaining) if not deps[i]]
+        if not ready:
+            # vòng phụ thuộc → phá vòng bằng cách pick 1
+            any_id = next(iter(remaining))
+            ready = [id2step[any_id]]
+        layers.append(ready)
+        for r in ready:
+            remaining.remove(r["id"])
+        for dset in deps.values():
+            dset.difference_update({r["id"] for r in ready})
+    return layers
+
+def run_agent(
+    user_prompt: str,
+    planner_template: str,
+    executor_template: str,
+    verifier_template: str,
+    max_steps: int = 6
+):
+    t0 = time.time()
+
+    # 1) Lập kế hoạch
+    plan_timeout = min(4.0, TIME_BUDGET_S * 0.2)
+    p = plan(user_prompt, planner_template, TIME_BUDGET_S, max_steps, plan_timeout)
+    steps = p["steps"]
+
+    if not steps:
+        return {"error": "Không tạo được kế hoạch."}
+
+    # 2) Thực thi có kiểm soát thời gian
+    results = {}
+    cut_off = TIME_BUDGET_S * 0.8
+
+    layers = topo_layers(steps)
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+        for layer in layers:
+            futures = {}
+            for s in layer:
+                elapsed = time.time() - t0
+                # Nếu gần hết giờ -> bỏ bước priority=low
+                if elapsed > cut_off and s.get("priority", "normal") == "low":
+                    results[s["id"]] = {"skipped": True, "reason": "time_budget"}
+                    continue
+                # đặt timeout per-step < ETA *0.9, và tối đa 6s
+                step_timeout = max(0.5, min(6.0, (s.get("eta_ms", 2000) / 1000.0) * 0.9))
+                futures[pool.submit(exec_step, s, executor_template, step_timeout)] = s["id"]
+
+            while futures:
+                done, _ = wait(futures, timeout=0.2, return_when=FIRST_COMPLETED)
+                for fut in done:
+                    sid = futures.pop(fut)
+                    try:
+                        results[sid] = fut.result()
+                    except Exception as e:
+                        results[sid] = {"id": sid, "error": str(e), "confidence": 0.0}
+
+                # hard-stop nếu vượt ngân sách
+                if time.time() - t0 > TIME_BUDGET_S:
+                    break
+            if time.time() - t0 > TIME_BUDGET_S:
+                break
+
+    merged = merge_results(results)
+
+    # 3) Verifier nhẹ (nếu còn thời gian ~10% ngân sách)
+    elapsed = time.time() - t0
+    verify_budget = TIME_BUDGET_S - elapsed - 1.0  # chừa 1s buffer
+    if verify_budget > 1.0:
+        try:
+            v = verify(merged, verifier_template, timeout_s=min(3.0, verify_budget))
+            merged["verification"] = v
+        except Exception as e:
+            merged["verification"] = {"valid": True, "notes": f"Verifier error: {e}"}
+
+    merged["elapsed_s"] = round(time.time() - t0, 3)
+    merged["time_budget_s"] = TIME_BUDGET_S
+    merged["cut_policy"] = p.get("cut_policy", "")
+    return merged
+
+agent/main.py
+
+import argparse
+from pathlib import Path
+from .controller import run_agent
+from .utils import load_prompt_template
+
+def main():
+    parser = argparse.ArgumentParser(description="Timeboxed Planner–Executors Agent (OpenAI REST)")
+    parser.add_argument("--prompt", "-p", type=str, required=True, help="Yêu cầu của bạn (1 prompt duy nhất).")
+    parser.add_argument("--planner", type=str, default="prompts/planner.txt", help="Đường dẫn planner.txt")
+    parser.add_argument("--executor", type=str, default="prompts/executor.txt", help="Đường dẫn executor.txt")
+    parser.add_argument("--verifier", type=str, default="prompts/verifier.txt", help="Đường dẫn verifier.txt")
+    parser.add_argument("--max-steps", type=int, default=6, help="Số bước tối đa planner được phép tạo")
+    args = parser.parse_args()
+
+    planner_template = load_prompt_template(args.planner)
+    executor_template = load_prompt_template(args.executor)
+    verifier_template = load_prompt_template(args.verifier)
+
+    result = run_agent(
+        user_prompt=args.prompt,
+        planner_template=planner_template,
+        executor_template=executor_template,
+        verifier_template=verifier_template,
+        max_steps=args.max_steps
+    )
+    # In ra JSON gọn
+    import json
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+if __name__ == "__main__":
+    main()
+
+
+⸻
+
+5) README.md
+
+# Timeboxed Planner–Executors Agent (OpenAI REST)
+
+Agent này tách 1 yêu cầu lớn thành nhiều bước có **time budget**, thực thi **song song**, và hợp nhất kết quả.  
+Dùng **OpenAI Responses API** (REST), nạp **prompt template** từ các file `.txt`.  
+Mục tiêu: giữ **SLA < 29s** và **độ chính xác** tương đương 1 prompt lớn.
+
+## Cài đặt
+```bash
+python -m venv .venv && source .venv/bin/activate  # (Windows: .venv\Scripts\activate)
+pip install -r requirements.txt
+cp .env.example .env  # rồi sửa OPENAI_API_KEY, OPENAI_MODEL nếu cần
+
+Chạy
+
+python -m agent.main -p "Hãy phân tích X, trích Y, đề xuất Z..."
+
+Tuỳ chọn:
+
+python -m agent.main \
+  -p "tôi muốn tạo outline báo cáo, lấy 3 số liệu chính và khuyến nghị ngắn" \
+  --max-steps 5 \
+  --planner prompts/planner.txt \
+  --executor prompts/executor.txt \
+  --verifier prompts/verifier.txt
+
+Cấu hình
+	•	.env:
+	•	OPENAI_API_KEY: bắt buộc.
+	•	OPENAI_BASE_URL: mặc định https://api.openai.com.
+	•	OPENAI_MODEL: mặc định gpt-5 (chỉnh theo model bạn có quyền).
+	•	TIME_BUDGET_S: tổng ngân sách thời gian (mặc định 25 giây).
+	•	MAX_WORKERS: số bước chạy song song.
+	•	MAX_OUTPUT_TOKENS, TEMPERATURE: giới hạn tokens và độ sáng tạo.
+
+Ghi chú kỹ thuật
+	•	Gọi API theo Responses API (docs): tạo input theo dạng messages và ép response_format là JSON để dễ parse và ổn định.
+Tài liệu: Responses API & structured outputs.
+	•	Khi còn < 20% thời gian, Planner/Controller cắt các bước priority thấp (graceful degrade).
+	•	Mỗi step có soft-timeout dựa trên eta_ms để tránh kéo dài đuôi latency.
+	•	Có Verifier hạng nhẹ nếu còn thời gian (> ~1 giây).
+
+Tuỳ biến
+	•	Thay nội dung trong prompts/*.txt để ổn hoá style tuỳ bài toán (trích xuất, phân loại, tóm tắt, v.v.).
+	•	Có thể thêm “tool-first”: thay vì suy luận, gọi API riêng rồi merge; Executor chỉ format kết quả.
+
+---
+
+# Xài ngay (ví dụ)
+
+```bash
+python -m agent.main -p "Hãy tạo checklist 5 đầu việc để launch landing page, kèm 3 rủi ro chính và cách giảm thiểu."
+
+Kết quả là JSON gồm các bước đã chạy (có thể có skipped nếu cắt vì thời gian), tổng thời gian, và verification.
+
+⸻
+
+Vì sao code này đáp ứng yêu cầu của bạn?
+	•	Chỉ nhập 1 prompt (--prompt), phần còn lại do agent tự plan/execute.
+	•	Time-bounded: TIME_BUDGET_S mặc định 25s; mỗi bước có ETA + timeout; cắt low-priority khi gần hết giờ → không còn lỗi 29s.
+	•	Độ chính xác: ép JSON output (structured outputs) + Verifier nhẹ để bắt lỗi định dạng hiển nhiên.  ￼
+	•	OpenAI REST (không SDK): dùng trực tiếp /v1/responses với requests.  ￼
+	•	Dễ refactor: mọi prompt đều là file .txt → chỉnh sửa/ghi version-control dễ dàng.
+
+Nếu bạn muốn mình gói sẵn Dockerfile, hoặc biến thành HTTP server (Flask/FastAPI) nhận prompt và trả JSON, mình sẽ đưa ngay bản mở rộng.

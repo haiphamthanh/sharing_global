@@ -1,0 +1,47 @@
+[
+  {
+    "row": 1,
+    "data": [
+      {
+        "text": "Click here\\nMore text",
+        "link": "http://example.com",
+        "raw": "'Click here\\\\nMore text'"
+      },
+      {
+        "text": "No link",
+        "link": null,
+        "raw": "'No link'"
+      }
+    ]
+  },
+  {
+    "row": 2,
+    "data": [
+      {
+        "text": "Another row",
+        "link": null,
+        "raw": "'Another row'"
+      },
+      {
+        "text": "Google",
+        "link": "http://google.com",
+        "raw": "'Google'"
+      }
+    ]
+  },
+  {
+    "row": 3,
+    "data": [
+      {
+        "text": "Another row",
+        "link": null,
+        "raw": "'Another row'"
+      },
+      {
+        "text": "Google",
+        "link": "http://google.com",
+        "raw": "'Google'"
+      }
+    ]
+  }
+]

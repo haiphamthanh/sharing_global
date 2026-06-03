@@ -1,0 +1,549 @@
+https://l.facebook.com/l.php?u=https%3A%2F%2Fdrive.google.com%2Fdrive%2Ffolders%2F1Gj0vsEbfG3PkWzRzvCM-_j-T01jCYXHl%3Fusp%3Dsharing%26fbclid%3DIwZXh0bgNhZW0CMTEAc3J0YwZhcHBfaWQPNDM3NjI2MzE2OTczNzg4AAEeqz-wwlSpMnZINbGgTV1ZIM6HvHzNkEhDUsYcQ8ak7Lh8uo4PlO5CseFk8LQ_aem_RIbYirP3EQakCy-ycg7nsw&h=AUBx2Qdb01ON-pzaA6ywmC5VEy069DxaphkJD3IFL3OfDdN3c2qoeDyecs1-A2Dm7rRoMEp-AFaDsTxkAQ8D9sk0BEqY_nQruP8uB9MNKsHDI8RhElXF5c0_dRMKkdyBvyuHgxq3IBSKzl8&s=1
+
+
+
+Nếu mục tiêu của bạn là:
+
+Không sửa code app
++
+Mock API theo testcase
++
+Nhiều simulator/device chạy đồng thời
++
+Có thể chọn response động
++
+Gần production nhất
+
+thì kiến trúc tốt nhất là:
+
+iOS/Android Simulator
+        ↓
+      Proxy
+   (mitmproxy)
+        ↓
+ Scenario Engine
+        ↓
+ Local JSON Stub
+
+Dưới đây là hướng triển khai thực tế có thể scale cho team QA/dev.
+
+⸻
+
+1. Kiến trúc khuyến nghị
+
+devices/
+ ├── iphone_1
+ ├── iphone_2
+ ├── pixel_1
+ └── pixel_2
+          ↓ proxy
+mitmproxy
+ ├── route engine
+ ├── scenario resolver
+ ├── response injector
+ └── logger
+          ↓
+mocks/
+ ├── login/
+ │    ├── success.json
+ │    ├── invalid_password.json
+ │    └── timeout.json
+ │
+ ├── profile/
+ │    ├── premium.json
+ │    └── expired.json
+ │
+ └── feed/
+      ├── empty.json
+      └── huge_data.json
+
+⸻
+
+2. Cách identify testcase cho từng device
+
+Đây là phần QUAN TRỌNG nhất.
+
+Bạn cần proxy biết:
+
+device nào đang chạy testcase nào
+
+⸻
+
+Có 4 cách phổ biến
+
+Cách	Khuyến nghị	Ghi chú
+Custom Header	⭐⭐⭐⭐⭐	Tốt nhất
+Query Param	⭐⭐⭐⭐	Dễ debug
+Device IP	⭐⭐	Không ổn định
+User-Agent	⭐	Không reliable
+
+⸻
+
+3. Khuyến nghị tốt nhất — Custom Header
+
+Ví dụ app request:
+
+GET /profile
+X-Test-Scenario: premium_user
+X-Test-Device: iphone_15
+
+⸻
+
+Nhưng bạn nói KHÔNG muốn sửa app?
+
+Vậy có 2 hướng:
+
+⸻
+
+Hướng A — Rewrite request tự động
+
+mitmproxy inject header theo device.
+
+Ví dụ:
+
+iPhone simulator A
+→ tự thêm:
+X-Test-Scenario=premium
+
+⸻
+
+Hướng B — Rule theo IP/device name
+
+Ví dụ:
+
+DEVICE_SCENARIOS = {
+    "192.168.1.10": "premium",
+    "192.168.1.11": "expired"
+}
+
+⸻
+
+4. Cách tốt nhất thực tế
+
+Tôi khuyến nghị:
+
+Device Name + Scenario Registry
+
+Ví dụ:
+
+{
+  "iphone_1": {
+    "profile": "premium",
+    "feed": "empty"
+  },
+  "pixel_1": {
+    "profile": "expired"
+  }
+}
+
+⸻
+
+5. Setup mitmproxy
+
+Install
+
+mitmproxy official website￼
+
+⸻
+
+Mac
+
+brew install mitmproxy
+
+⸻
+
+Verify
+
+mitmproxy --version
+
+⸻
+
+6. Install certificate
+
+iOS Simulator
+
+Open:
+
+http://mitm.it
+
+Install cert.
+
+⸻
+
+Important
+
+Enable:
+
+Settings
+→ General
+→ About
+→ Certificate Trust Settings
+
+Trust mitmproxy CA.
+
+⸻
+
+Android Emulator
+
+Open:
+
+http://mitm.it
+
+Install certificate.
+
+⸻
+
+Android 7+ Problem
+
+Nhiều app reject user CA.
+
+⸻
+
+Nếu app KHÔNG pinning
+
+Thêm:
+
+network_security_config
+
+⸻
+
+Nếu app production build
+
+Có thể fail vì:
+
+SSL pinning
+
+⸻
+
+7. Rủi ro lớn nhất — SSL Pinning
+
+Nếu app dùng:
+
+* OkHttp CertificatePinner
+* TrustKit
+* ATS pinning
+* custom trust manager
+
+thì MITM fail.
+
+⸻
+
+Giải pháp
+
+Android
+
+* debug build disable pinning
+* hoặc dùng Frida
+
+⸻
+
+iOS
+
+* Frida
+* objection
+* jailbreak runtime patch
+
+⸻
+
+8. Code proxy engine production-grade
+
+Đây là kiến trúc tốt.
+
+⸻
+
+Structure
+
+proxy/
+ ├── main.py
+ ├── scenario_manager.py
+ ├── response_loader.py
+ ├── device_registry.json
+ └── mocks/
+
+⸻
+
+9. device_registry.json
+
+{
+  "iphone_1": {
+    "profile": "premium",
+    "feed": "empty"
+  },
+  "pixel_1": {
+    "profile": "expired"
+  }
+}
+
+⸻
+
+10. response_loader.py
+
+import json
+from pathlib import Path
+MOCK_DIR = Path("./mocks")
+def load_mock(api_name, scenario):
+    path = MOCK_DIR / api_name / f"{scenario}.json"
+    if not path.exists():
+        return None
+    with open(path, "r") as f:
+        return json.load(f)
+
+⸻
+
+11. scenario_manager.py
+
+import json
+with open("device_registry.json") as f:
+    DEVICE_REGISTRY = json.load(f)
+def get_scenario(device_name, api_name):
+    device = DEVICE_REGISTRY.get(device_name)
+    if not device:
+        return None
+    return device.get(api_name)
+
+⸻
+
+12. main.py
+
+from mitmproxy import http
+import json
+from scenario_manager import get_scenario
+from response_loader import load_mock
+def request(flow: http.HTTPFlow):
+    host = flow.request.host
+    path = flow.request.path
+    # identify device
+    device_name = flow.request.headers.get(
+        "X-Device-Name",
+        "unknown"
+    )
+    api_name = resolve_api(path)
+    scenario = get_scenario(
+        device_name,
+        api_name
+    )
+    if not scenario:
+        return
+    mock = load_mock(api_name, scenario)
+    if not mock:
+        return
+    flow.response = http.Response.make(
+        200,
+        json.dumps(mock),
+        {
+            "Content-Type": "application/json"
+        }
+    )
+def resolve_api(path):
+    if "/profile" in path:
+        return "profile"
+    if "/feed" in path:
+        return "feed"
+    return None
+
+⸻
+
+13. Chạy proxy
+
+mitmdump -s main.py
+
+⸻
+
+14. Multi-device cùng lúc
+
+mitmproxy inherently support nhiều device.
+
+⸻
+
+Mỗi simulator:
+
+Proxy config:
+
+Host: your-mac-ip
+Port: 8080
+
+⸻
+
+Device differentiation
+
+Có thể dùng:
+
+X-Device-Name
+
+hoặc IP mapping.
+
+⸻
+
+15. Dynamic control runtime
+
+Bạn có thể làm admin API.
+
+Ví dụ:
+
+POST /admin/scenario
+{
+  "device": "iphone_1",
+  "api": "profile",
+  "scenario": "expired"
+}
+
+⸻
+
+Khi đó QA có thể switch realtime
+
+Không cần restart app.
+
+⸻
+
+16. Những vấn đề lớn sẽ gặp
+
+A. WebSocket
+
+mitmproxy support nhưng phức tạp.
+
+⸻
+
+B. HTTP/2
+
+Một số app dùng:
+
+gRPC
+
+hoặc custom binary protocol.
+
+Mock khó hơn.
+
+⸻
+
+C. Compression
+
+Request/response:
+
+gzip
+brotli
+
+Cần decode.
+
+⸻
+
+D. App detect proxy
+
+Một số app production:
+
+detect VPN/proxy
+
+⸻
+
+E. CDN cache
+
+Response không đi qua proxy.
+
+⸻
+
+F. SSL renewal
+
+CA certificate expire.
+
+⸻
+
+G. Race condition
+
+Nhiều request đồng thời.
+
+⸻
+
+H. Large payload
+
+Memory tăng mạnh nếu load JSON lớn.
+
+⸻
+
+17. Best practice production-grade
+
+Không hardcode path
+
+Tạo route config:
+
+{
+  "/profile": "profile",
+  "/feed": "feed"
+}
+
+⸻
+
+Cache response
+
+LRU cache
+
+để tránh đọc file liên tục.
+
+⸻
+
+Structured logging
+
+Log:
+
+device
+scenario
+api
+response
+latency
+
+⸻
+
+Simulate production issue
+
+Bạn có thể inject:
+
+Scenario	Cách
+timeout	sleep
+slow network	delay
+malformed JSON	invalid body
+500	custom status
+disconnect	kill response
+
+⸻
+
+18. Level nâng cao
+
+Bạn có thể build:
+
+Mini Charles + Mock Server Platform
+
+⸻
+
+Stack khuyến nghị
+
+Component	Tech
+Proxy	mitmproxy
+Admin API	FastAPI
+Scenario Engine	Python
+UI	React
+Storage	JSON/YAML
+Automation	pytest
+
+⸻
+
+Kiến trúc cuối cùng tôi khuyến nghị
+
+Simulator/Device
+      ↓
+mitmproxy
+      ↓
+Scenario Resolver
+      ↓
+Mock Response Engine
+      ↓
+JSON Repository
+
+⸻
+
+Đây là approach được dùng khá nhiều ở:
+
+* mobile QA automation
+* regression testing
+* fintech testing
+* super app
+* offline simulation
+* chaos testing
+* release validation
